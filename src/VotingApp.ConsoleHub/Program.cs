@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using System.Net;
 
 namespace VotingApp.ConsoleHub
 {
@@ -18,6 +19,7 @@ namespace VotingApp.ConsoleHub
             var config = new ConfigurationBuilder()
                 .SetBasePath(Directory.GetCurrentDirectory())
                 .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+                .AddEnvironmentVariables()
                 .Build();
 
             return WebHost.CreateDefaultBuilder(args)
@@ -37,6 +39,11 @@ namespace VotingApp.ConsoleHub
         public void ConfigureServices(IServiceCollection services)
         {
             services.AddSignalR();
+            services.AddHttpsRedirection(options =>
+            {
+                options.RedirectStatusCode = (int)HttpStatusCode.TemporaryRedirect;
+                options.HttpsPort = 8080;
+            });
         }
 
         public void Configure(IApplicationBuilder app)
