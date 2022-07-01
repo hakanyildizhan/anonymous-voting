@@ -8,5 +8,6 @@ namespace VotingApp.ConsoleHub
         void BroadcastState(State state);
         void BroadcastDomainParameters(DomainParameters parameters);
         void BroadcastQuestion(string question);
+        void NotifyConnected(string voterId);
     }
 }

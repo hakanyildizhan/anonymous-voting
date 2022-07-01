@@ -2,7 +2,7 @@
 {
     public class RoundPayload
     {
-        public int VoterId { get; set; }
+        public string VoterId { get; set; }
         public string Payload { get; set; }
     }
 }

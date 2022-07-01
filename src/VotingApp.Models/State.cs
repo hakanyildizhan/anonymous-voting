@@ -3,6 +3,7 @@
     public enum State
     {
         WaitingToCommence,
+        AlreadyStarted,
         DistributingDomainParameters,
         Round1,
         Round1ZKPBroadcast,

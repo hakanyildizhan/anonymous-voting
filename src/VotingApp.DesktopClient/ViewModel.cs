@@ -6,6 +6,8 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Input;
+using VotingApp.DesktopClient.Crypto;
+using VotingApp.DesktopClient.Hub;
 using VotingApp.Models;
 
 namespace VotingApp.DesktopClient
@@ -18,6 +20,10 @@ namespace VotingApp.DesktopClient
         private int _voterCount;
         private double _yesPercentage;
         private double _noPercentage;
+        private readonly string _clientId;
+        private HubConnection _connection;
+        private DParamHandler _paramHandler;
+        
         public IConfiguration Configuration { get; set; }
         public string Status 
         {
@@ -79,28 +85,40 @@ namespace VotingApp.DesktopClient
             Configuration = configuration;
             VoteYesCommand = new RelayCommand(() => VoteYes());
             VoteNoCommand = new RelayCommand(() => VoteNo());
+            _clientId = Guid.NewGuid().ToString();
             Task.Run(InitializeAsync);
         }
 
         private async Task InitializeAsync()
         {
             string hubUrl = Configuration.GetSection("AppSettings").GetSection("HubEndpoint").Value;
-            connection = new HubConnectionBuilder()
+            _connection = new HubConnectionBuilder()
                 .WithUrl(hubUrl)
+                .WithAutomaticReconnect(new ConnectionRetryPolicy(ConnectionLost, RetryLimitExceeded))
                 .Build();
+            await _connection.StartAsync();
+            await _connection.SendAsync("NotifyConnected", _clientId);
+            _connection.On<State>("BroadcastState", HandleStatusChange);
+            _connection.On<DomainParameters>("BroadcastDomainParameters", HandleBroadcastDomainParameters);
+        }
 
-            connection.On<State>("BroadcastState", HandleStatusChange);
-
-            connection.Closed += async (error) =>
-            {
-                await Task.Delay(new Random().Next(0, 5) * 1000);
-                await connection.StartAsync();
-            };
+        private void HandleBroadcastDomainParameters(DomainParameters parameters)
+        {
+            _paramHandler = new DParamHandler(parameters);
         }
 
         private async Task HandleStatusChange(State state)
         {
-
+            switch(state)
+            {
+                case State.AlreadyStarted:
+                    Status = "Voting has already started. Going offline..";
+                    await _connection.StopAsync();
+                    break;
+                case State.DistributingDomainParameters:
+                    Status = "Getting domain parameters..";
+                    break;
+            }
         }
 
         private void VoteYes()
@@ -111,6 +129,16 @@ namespace VotingApp.DesktopClient
         private void VoteNo()
         {
 
+        }
+
+        private void RetryLimitExceeded(object? sender, EventArgs e)
+        {
+            Status = "Connection retries failed. Connection is lost.";
+        }
+
+        private void ConnectionLost(object? sender, EventArgs e)
+        {
+            Status = "Connection lost. Retrying..";
         }
     }
 }
