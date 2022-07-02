@@ -128,8 +128,9 @@ namespace VotingApp.DesktopClient
             _paramHandler = new DParamHandler(parameters);
             _paramHandler.GenerateKeys();
             Ticker = "Your private key: " + _paramHandler.GetPrivateKeyString();
-            await Task.Delay(TimeSpan.FromSeconds(5));
+            await Task.Delay(TimeSpan.FromSeconds(4));
             Ticker = "Your public key: " + _paramHandler.GetPublicKeyString();
+            Status = "Generated private and voting key successfully.";
         }
 
         private async Task HandleStatusChange(State state)
