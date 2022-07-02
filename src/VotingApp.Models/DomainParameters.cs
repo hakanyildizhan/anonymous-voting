@@ -1,11 +1,11 @@
 ﻿using Org.BouncyCastle.Math;
-using Org.BouncyCastle.Math.EC;
 
 namespace VotingApp.Models
 {
     public class DomainParameters
     {
-        public ECPoint G { get; set; }
+        public BigInteger Gx { get; set; }
+        public BigInteger Gy { get; set; }
         public BigInteger Q { get; set; }
         public BigInteger A { get; set; }
         public BigInteger B { get; set; }

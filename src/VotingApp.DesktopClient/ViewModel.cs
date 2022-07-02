@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -9,6 +10,7 @@ using System.Windows.Input;
 using VotingApp.DesktopClient.Crypto;
 using VotingApp.DesktopClient.Hub;
 using VotingApp.Models;
+using VotingApp.Models.JsonHandling;
 
 namespace VotingApp.DesktopClient
 {
@@ -16,6 +18,7 @@ namespace VotingApp.DesktopClient
     {
         private string _question;
         private string _status;
+        private string _ticker;
         private HubConnection connection;
         private int _voterCount;
         private double _yesPercentage;
@@ -34,6 +37,19 @@ namespace VotingApp.DesktopClient
                 {
                     _status = value;
                     OnPropertyChanged(nameof(Status));
+                }
+            }
+        }
+
+        public string Ticker
+        {
+            get => _ticker;
+            set
+            {
+                if (_ticker != value)
+                {
+                    _ticker = value;
+                    OnPropertyChanged(nameof(Ticker));
                 }
             }
         }
@@ -91,20 +107,29 @@ namespace VotingApp.DesktopClient
 
         private async Task InitializeAsync()
         {
+            Status = "Waiting to connect to the server..";
             string hubUrl = Configuration.GetSection("AppSettings").GetSection("HubEndpoint").Value;
             _connection = new HubConnectionBuilder()
+                .AddNewtonsoftJsonProtocol(JsonHandlingHelpers.GetJsonHandlerOptions())
                 .WithUrl(hubUrl)
                 .WithAutomaticReconnect(new ConnectionRetryPolicy(ConnectionLost, RetryLimitExceeded))
                 .Build();
+            
             await _connection.StartAsync();
+            Status = "Successfully connected to server.";
             await _connection.SendAsync("NotifyConnected", _clientId);
             _connection.On<State>("BroadcastState", HandleStatusChange);
             _connection.On<DomainParameters>("BroadcastDomainParameters", HandleBroadcastDomainParameters);
         }
 
-        private void HandleBroadcastDomainParameters(DomainParameters parameters)
+        private async Task HandleBroadcastDomainParameters(DomainParameters parameters)
         {
+            Status = "Generating keys..";
             _paramHandler = new DParamHandler(parameters);
+            _paramHandler.GenerateKeys();
+            Ticker = "Your private key: " + _paramHandler.GetPrivateKeyString();
+            await Task.Delay(TimeSpan.FromSeconds(5));
+            Ticker = "Your public key: " + _paramHandler.GetPublicKeyString();
         }
 
         private async Task HandleStatusChange(State state)

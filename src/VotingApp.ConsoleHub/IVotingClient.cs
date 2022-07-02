@@ -4,10 +4,10 @@ namespace VotingApp.ConsoleHub
 {
     public interface IVotingClient
     {
-        void BroadcastRoundPayload(RoundPayload voter);
-        void BroadcastState(State state);
-        void BroadcastDomainParameters(DomainParameters parameters);
-        void BroadcastQuestion(string question);
-        void NotifyConnected(string voterId);
+        Task BroadcastRoundPayload(RoundPayload voter);
+        Task BroadcastState(State state);
+        Task BroadcastDomainParameters(DomainParameters parameters);
+        Task BroadcastQuestion(string question);
+        Task NotifyConnected(string voterId);
     }
 }

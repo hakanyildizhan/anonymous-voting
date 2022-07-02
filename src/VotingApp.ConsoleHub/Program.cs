@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using System.Net;
+using VotingApp.Models.JsonHandling;
 
 namespace VotingApp.ConsoleHub
 {
@@ -38,7 +39,8 @@ namespace VotingApp.ConsoleHub
 
         public void ConfigureServices(IServiceCollection services)
         {
-            services.AddSignalR();
+            services.AddSignalR()
+                .AddNewtonsoftJsonProtocol(JsonHandlingHelpers.GetJsonHandlerOptions());
             services.AddHttpsRedirection(options =>
             {
                 options.RedirectStatusCode = (int)HttpStatusCode.TemporaryRedirect;

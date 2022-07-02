@@ -14,61 +14,68 @@ namespace VotingApp.ConsoleHub
         private ConcurrentDictionary<string, object> _voters = new ConcurrentDictionary<string,object>();
         private bool _started;
 
-        public override Task OnConnectedAsync()
+        public override async Task OnConnectedAsync()
         {
             Console.WriteLine("A new client has connected.");
-            return base.OnConnectedAsync();
+            await base.OnConnectedAsync();
         }
-        public void BroadcastRoundPayload(RoundPayload payload)
+        public async Task BroadcastRoundPayload(RoundPayload payload)
         {
-            Clients.All.BroadcastRoundPayload(payload);
+            await Clients.All.BroadcastRoundPayload(payload);
         }
 
-        public void BroadcastState(State state)
+        public async Task BroadcastState(State state)
         {
-            Clients.All.BroadcastState(state);
+            await Clients.All.BroadcastState(state);
         }
 
-        public void BroadcastDomainParameters(DomainParameters parameters)
+        public async Task BroadcastDomainParameters(DomainParameters parameters)
         {
-            Clients.All.BroadcastDomainParameters(parameters);
+            await Clients.All.BroadcastDomainParameters(parameters);
         }
 
-        public void BroadcastQuestion(string question)
+        public async Task BroadcastQuestion(string question)
         {
-            Clients.All.BroadcastQuestion(question);
+            await Clients.All.BroadcastQuestion(question);
         }
 
-        public void NotifyConnected(string voterId)
+        public async Task NotifyConnected(string voterId)
         {
             if (_started)
             {
-                Clients.Caller.BroadcastState(State.AlreadyStarted);
+                await Clients.Caller.BroadcastState(State.AlreadyStarted);
                 return;
             }
 
             Console.WriteLine($"Voter with ID {voterId} is registered.");
             _voters.TryAdd(voterId, new object());
 
-            if (_voters.Count == 3)
+            if (SessionIsStarted())
             {
+                await Task.Delay(TimeSpan.FromSeconds(2));
                 _started = true;
-                BroadcastState(State.DistributingDomainParameters);
-                DistributeDomainParameters();
+                await BroadcastState(State.DistributingDomainParameters);
+                await DistributeDomainParameters();
             }
         }
 
-        private void DistributeDomainParameters()
+        private bool SessionIsStarted()
+        {
+            return _voters.Count == 1;
+        }
+
+        private async Task DistributeDomainParameters()
         {
             DerObjectIdentifier ecParam = X9ObjectIdentifiers.Prime256v1;
             ECKeyPairGenerator keyGenerator = new ECKeyPairGenerator();
             var parameters = new ECKeyGenerationParameters(ecParam, new SecureRandom());
-            BroadcastDomainParameters(new DomainParameters()
+            await BroadcastDomainParameters(new DomainParameters()
             {
                 Q = parameters.DomainParameters.Curve.Field.Characteristic,
                 A = parameters.DomainParameters.Curve.A.ToBigInteger(),
                 B = parameters.DomainParameters.Curve.B.ToBigInteger(),
-                G = parameters.DomainParameters.G,
+                Gx = parameters.DomainParameters.G.AffineXCoord.ToBigInteger(),
+                Gy = parameters.DomainParameters.G.AffineYCoord.ToBigInteger(),
                 P = parameters.DomainParameters.Curve.Order,
                 N = parameters.DomainParameters.N,
                 Cofactor = parameters.DomainParameters.Curve.Cofactor
