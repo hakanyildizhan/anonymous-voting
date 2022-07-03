@@ -80,7 +80,7 @@
               Margin="20">
             
             <TextBlock Text="{Binding Ticker, NotifyOnTargetUpdated=True}"
-                       FontSize="18"
+                       FontSize="16"
                        Foreground="Black"
                        Background="White"
                        x:Name="TitleTextBlock"
