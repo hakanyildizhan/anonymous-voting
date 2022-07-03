@@ -118,7 +118,7 @@ namespace VotingApp.DesktopClient
             await _connection.StartAsync();
             Status = "Successfully connected to server.";
             await _connection.SendAsync("NotifyConnected", _clientId);
-            _connection.On<State>("BroadcastState", HandleStatusChange);
+            _connection.On<State>("BroadcastStateToVoters", HandleStatusChange);
             _connection.On<DomainParameters>("BroadcastDomainParameters", HandleBroadcastDomainParameters);
         }
 
@@ -128,21 +128,28 @@ namespace VotingApp.DesktopClient
             _paramHandler = new DParamHandler(parameters);
             _paramHandler.GenerateKeys();
             Ticker = "Your private key: " + _paramHandler.GetPrivateKeyString();
-            await Task.Delay(TimeSpan.FromSeconds(4));
-            Ticker = "Your public key: " + _paramHandler.GetPublicKeyString();
+            await Task.Delay(TimeSpan.FromSeconds(1));
+            Ticker += "\r\nYour public key: " + _paramHandler.GetPublicKeyString();
             Status = "Generated private and voting key successfully.";
+            await _connection.SendAsync("VoterIsReady", _clientId);
         }
 
         private async Task HandleStatusChange(State state)
         {
             switch(state)
             {
+                case State.WaitingToCommence:
+                    Status = "Waiting for voting to start..";
+                    break;
                 case State.AlreadyStarted:
                     Status = "Voting has already started. Going offline..";
                     await _connection.StopAsync();
                     break;
                 case State.DistributingDomainParameters:
                     Status = "Getting domain parameters..";
+                    break;
+                case State.Round1:
+                    Status = "Round 1 in progress.";
                     break;
             }
         }

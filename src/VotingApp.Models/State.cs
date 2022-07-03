@@ -3,16 +3,14 @@
     public enum State
     {
         WaitingToCommence,
-        AlreadyStarted,
         DistributingDomainParameters,
         Round1,
         Round1ZKPBroadcast,
-        YiCalculationInProgress,
-        YiCalculationComplete,
+        YiCalculation,
         Round2,
         Round2ZKPBroadcast,
-        VotingResultCalculationInProgress,
-        VotingResultCalculationComplete,
-        Finished
+        VotingResultCalculation,
+        Finished,
+        AlreadyStarted
     }
 }

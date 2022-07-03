@@ -11,27 +11,19 @@ namespace VotingApp.ConsoleHub
 {
     public class VotingHub : Hub<IVotingClient>
     {
-        private ConcurrentDictionary<string, object> _voters = new ConcurrentDictionary<string,object>();
+        private ConcurrentDictionary<string, ClientState> _voters = new ConcurrentDictionary<string, ClientState>();
         private bool _started;
+        private static State _currentState = State.WaitingToCommence;
 
         public override async Task OnConnectedAsync()
         {
             Console.WriteLine("A new client has connected.");
             await base.OnConnectedAsync();
         }
+
         public async Task BroadcastRoundPayload(RoundPayload payload)
         {
             await Clients.All.BroadcastRoundPayload(payload);
-        }
-
-        public async Task BroadcastState(State state)
-        {
-            await Clients.All.BroadcastState(state);
-        }
-
-        public async Task BroadcastDomainParameters(DomainParameters parameters)
-        {
-            await Clients.All.BroadcastDomainParameters(parameters);
         }
 
         public async Task BroadcastQuestion(string question)
@@ -43,20 +35,66 @@ namespace VotingApp.ConsoleHub
         {
             if (_started)
             {
-                await Clients.Caller.BroadcastState(State.AlreadyStarted);
+                await Clients.Caller.BroadcastStateToVoters(State.AlreadyStarted);
                 return;
             }
 
             Console.WriteLine($"Voter with ID {voterId} is registered.");
-            _voters.TryAdd(voterId, new object());
+            _voters.TryAdd(voterId, ClientState.Ready);
+            await Clients.Caller.BroadcastStateToVoters(State.WaitingToCommence);
 
             if (SessionIsStarted())
             {
                 await Task.Delay(TimeSpan.FromSeconds(2));
                 _started = true;
-                await BroadcastState(State.DistributingDomainParameters);
-                await DistributeDomainParameters();
+                await AdvanceToNextStage();
             }
+        }
+
+        private async Task AdvanceToNextStage()
+        {
+            await Clients.All.BroadcastStateToVoters(++_currentState);
+
+            switch (_currentState)
+            {
+                case State.DistributingDomainParameters:
+                    await DistributeDomainParameters();
+                    SetAllVoterStates(ClientState.Busy);
+                    break;
+                case State.Round1:
+                    await Clients.Caller.BroadcastStateToVoters(_currentState);
+                    SetAllVoterStates(ClientState.Busy);
+                    break;
+            }
+        }
+
+        private void SetAllVoterStates(ClientState state)
+        {
+            foreach (var keyValuePair in _voters)
+            {
+                _voters[keyValuePair.Key] = state;
+            }
+        }
+
+        public async Task VoterIsReady(string voterId)
+        {
+            if (!_voters.ContainsKey(voterId))
+            {
+                // TODO: handle
+                return;
+            }
+
+            _voters[voterId] = ClientState.Ready;
+
+            if (AreAllVotersReady())
+            {
+                await AdvanceToNextStage();
+            }
+        }
+
+        private bool AreAllVotersReady()
+        {
+            return !_voters.Any(v => v.Value != ClientState.Ready);
         }
 
         private bool SessionIsStarted()
@@ -69,7 +107,7 @@ namespace VotingApp.ConsoleHub
             DerObjectIdentifier ecParam = X9ObjectIdentifiers.Prime256v1;
             ECKeyPairGenerator keyGenerator = new ECKeyPairGenerator();
             var parameters = new ECKeyGenerationParameters(ecParam, new SecureRandom());
-            await BroadcastDomainParameters(new DomainParameters()
+            await Clients.All.BroadcastDomainParameters(new DomainParameters()
             {
                 Q = parameters.DomainParameters.Curve.Field.Characteristic,
                 A = parameters.DomainParameters.Curve.A.ToBigInteger(),
