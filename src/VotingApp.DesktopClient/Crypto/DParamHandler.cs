@@ -1,5 +1,6 @@
 ﻿using Org.BouncyCastle.Crypto.Generators;
 using Org.BouncyCastle.Crypto.Parameters;
+using Org.BouncyCastle.Math;
 using Org.BouncyCastle.Math.EC;
 using Org.BouncyCastle.Security;
 using System;
@@ -42,6 +43,25 @@ namespace VotingApp.DesktopClient.Crypto
         public string GetPrivateKeyString()
         {
             return _curveOperations.PrivateKeyString;
+        }
+
+        public BigInteger GetPrivateKey()
+        {
+            return _curveOperations.PrivateKey.D;
+        }
+
+        public Point GetPublicKey()
+        {
+            return new Point()
+            {
+                X = _curveOperations.PublicKey.Q.AffineXCoord.ToBigInteger(),
+                Y = _curveOperations.PublicKey.Q.AffineYCoord.ToBigInteger()
+            };
+        }
+
+        public void SetPublicKeys(IList<Round1Payload?>? previousVoterKeys, IList<Round1Payload?>? nextVoterKeys)
+        {
+
         }
     }
 }

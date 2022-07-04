@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -26,6 +27,7 @@ namespace VotingApp.DesktopClient
         private readonly string _clientId;
         private HubConnection _connection;
         private DParamHandler _paramHandler;
+        private State _currentState;
         
         public IConfiguration Configuration { get; set; }
         public string Status 
@@ -120,6 +122,23 @@ namespace VotingApp.DesktopClient
             await _connection.SendAsync("NotifyConnected", _clientId);
             _connection.On<State>("BroadcastStateToVoters", HandleStatusChange);
             _connection.On<DomainParameters>("BroadcastDomainParameters", HandleBroadcastDomainParameters);
+            _connection.On<IList<RoundPayload>>("GetRoundPayloads", HandleGetRoundPayloads);
+        }
+
+        private async Task HandleGetRoundPayloads(IList<RoundPayload> payloads)
+        {
+            switch(_currentState)
+            {
+                case State.Round1:
+                    var previousVoterKeys = payloads.Where(p => !p.VoterId.Equals(_clientId) && string.Compare(p.VoterId, _clientId) == -1)
+                        .Select(p => JsonConvert.DeserializeObject<Round1Payload>(p.Payload))
+                        .ToList();
+                    var nextVoterKeys = payloads.Where(p => !p.VoterId.Equals(_clientId) && string.Compare(p.VoterId, _clientId) == 1)
+                        .Select(p => JsonConvert.DeserializeObject<Round1Payload>(p.Payload))
+                        .ToList();
+                    _paramHandler.SetPublicKeys(previousVoterKeys, nextVoterKeys);
+                    break;
+            }
         }
 
         private async Task HandleBroadcastDomainParameters(DomainParameters parameters)
@@ -136,7 +155,8 @@ namespace VotingApp.DesktopClient
 
         private async Task HandleStatusChange(State state)
         {
-            switch(state)
+            _currentState = state;
+            switch (_currentState)
             {
                 case State.WaitingToCommence:
                     Status = "Waiting for voting to start..";
@@ -150,6 +170,18 @@ namespace VotingApp.DesktopClient
                     break;
                 case State.Round1:
                     Status = "Round 1 in progress.";
+                    await Task.Delay(TimeSpan.FromSeconds(1));
+                    await _connection.SendAsync("BroadcastRoundPayload", new RoundPayload()
+                    {
+                        VoterId = _clientId,
+                        Round = 1,
+                        Payload = JsonConvert.SerializeObject(new Round1Payload()
+                        {
+                            gXx = _paramHandler.GetPublicKey().X,
+                            gXy = _paramHandler.GetPublicKey().Y,
+                        })
+                    });
+                    Status = "Sent Round 1 payload. Waiting to get all voter payloads..";
                     break;
             }
         }

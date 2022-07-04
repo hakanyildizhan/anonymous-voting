@@ -12,6 +12,7 @@ namespace VotingApp.ConsoleHub
     public class VotingHub : Hub<IVotingClient>
     {
         private ConcurrentDictionary<string, ClientState> _voters = new ConcurrentDictionary<string, ClientState>();
+        private ConcurrentBag<RoundPayload> _roundPayloads = new ConcurrentBag<RoundPayload>();
         private bool _started;
         private static State _currentState = State.WaitingToCommence;
 
@@ -23,7 +24,13 @@ namespace VotingApp.ConsoleHub
 
         public async Task BroadcastRoundPayload(RoundPayload payload)
         {
-            await Clients.All.BroadcastRoundPayload(payload);
+            _voters[payload.VoterId] = ClientState.Ready;
+            _roundPayloads.Add(payload);
+
+            if (AreAllVotersReady())
+            {
+                await Clients.All.GetRoundPayloads(_roundPayloads.ToList());
+            }
         }
 
         public async Task BroadcastQuestion(string question)
