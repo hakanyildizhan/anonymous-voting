@@ -130,13 +130,10 @@ namespace VotingApp.DesktopClient
             switch(_currentState)
             {
                 case State.Round1:
-                    var previousVoterKeys = payloads.Where(p => !p.VoterId.Equals(_clientId) && string.Compare(p.VoterId, _clientId) == -1)
-                        .Select(p => JsonConvert.DeserializeObject<Round1Payload>(p.Payload))
-                        .ToList();
-                    var nextVoterKeys = payloads.Where(p => !p.VoterId.Equals(_clientId) && string.Compare(p.VoterId, _clientId) == 1)
-                        .Select(p => JsonConvert.DeserializeObject<Round1Payload>(p.Payload))
-                        .ToList();
-                    _paramHandler.SetPublicKeys(previousVoterKeys, nextVoterKeys);
+                    var voterPayloads = payloads.Where(p => !p.VoterId.Equals(_clientId))
+                        .Select(p => new { p.VoterId, p.Payload })
+                        .ToDictionary(p => p.VoterId, p => JsonConvert.DeserializeObject<Round1Payload>(p.Payload));
+                    _paramHandler.SavePayloads(voterPayloads);
                     break;
             }
         }
@@ -155,6 +152,11 @@ namespace VotingApp.DesktopClient
 
         private async Task HandleStatusChange(State state)
         {
+            if (_currentState == state)
+            {
+                return;
+            }
+
             _currentState = state;
             switch (_currentState)
             {
@@ -171,17 +173,34 @@ namespace VotingApp.DesktopClient
                 case State.Round1:
                     Status = "Round 1 in progress.";
                     await Task.Delay(TimeSpan.FromSeconds(1));
-                    await _connection.SendAsync("BroadcastRoundPayload", new RoundPayload()
+                    _paramHandler.PickRandomr();
+                    _paramHandler.CalculatesForRound1();
+
+                    var payload = new RoundPayload()
                     {
                         VoterId = _clientId,
                         Round = 1,
                         Payload = JsonConvert.SerializeObject(new Round1Payload()
                         {
-                            gXx = _paramHandler.GetPublicKey().X,
-                            gXy = _paramHandler.GetPublicKey().Y,
+                            VotingKey = new Point()
+                            {
+                                X = _paramHandler.GetPublicKey().X,
+                                Y = _paramHandler.GetPublicKey().Y,
+                            },
+                            ZKP = new Round1ZKP()
+                            {
+                                R = _paramHandler.R,
+                                s = _paramHandler.s
+                            }
                         })
-                    });
-                    Status = "Sent Round 1 payload. Waiting to get all voter payloads..";
+                    };
+
+                    await _connection.SendAsync("BroadcastRoundPayload", payload);
+                    Status = "Sent Round 1 payload & zero-knowledge proof.";
+                    break;
+                case State.Round1ZKPCheck:
+                    Status = "All voter payloads are now available. Checking proofs of zero knowledge..";
+                    // TODO: check ZKPs
                     break;
             }
         }

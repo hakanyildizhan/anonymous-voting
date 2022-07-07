@@ -2,7 +2,7 @@
 
 namespace VotingApp.Models.JsonHandling
 {
-    public class BigIntegerConverter : Newtonsoft.Json.JsonConverter
+    public class BouncyCastleBigIntegerConverter : Newtonsoft.Json.JsonConverter
     {
         public override bool CanConvert(Type objectType)
         {

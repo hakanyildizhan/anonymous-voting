@@ -12,7 +12,7 @@ namespace VotingApp.Models.JsonHandling
                 options.PayloadSerializerSettings.MaxDepth = 3;
                 options.PayloadSerializerSettings.Converters = new List<Newtonsoft.Json.JsonConverter>()
                 {
-                    new BigIntegerConverter()
+                    new BouncyCastleBigIntegerConverter()
                 };
             };
         }

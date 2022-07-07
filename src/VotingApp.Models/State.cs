@@ -5,10 +5,10 @@
         WaitingToCommence,
         DistributingDomainParameters,
         Round1,
-        Round1ZKPBroadcast,
+        Round1ZKPCheck,
         YiCalculation,
         Round2,
-        Round2ZKPBroadcast,
+        Round2ZKPCheck,
         VotingResultCalculation,
         Finished,
         AlreadyStarted
