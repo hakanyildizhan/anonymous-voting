@@ -5,6 +5,6 @@ namespace VotingApp.Models
     public class Round1ZKP
     {
         public Point R { get; set; }
-        public BigInteger s { get; set; }
+        public string s { get; set; }
     }
 }

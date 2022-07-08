@@ -1,4 +1,5 @@
-﻿using Org.BouncyCastle.Crypto.Generators;
+﻿using Newtonsoft.Json;
+using Org.BouncyCastle.Crypto.Generators;
 using Org.BouncyCastle.Crypto.Parameters;
 using Org.BouncyCastle.Math;
 using Org.BouncyCastle.Math.EC;
@@ -18,6 +19,21 @@ namespace VotingApp.DesktopClient.Crypto
         private DomainParameters _parameters;
         private BigInteger _s;
         private Dictionary<string, Round1Payload> _payloads;
+        private RoundPayload _round1Payload;
+        public RoundPayload Round1Payload
+        {
+            get
+            {
+                return _round1Payload;
+            }
+        }
+        public Dictionary<string, Round1Payload> Payloads
+        {
+            get
+            {
+                return _payloads;
+            }
+        }
         public System.Numerics.BigInteger s
         {
             get
@@ -32,8 +48,8 @@ namespace VotingApp.DesktopClient.Crypto
                 ECPoint r = _ecParameters.G.Multiply(_r).Normalize();
                 return new Point()
                 {
-                    X = System.Numerics.BigInteger.Parse(r.AffineXCoord.ToBigInteger().ToString()),
-                    Y = System.Numerics.BigInteger.Parse(r.AffineYCoord.ToBigInteger().ToString()),
+                    Xstr = r.AffineXCoord.ToBigInteger().ToString(),
+                    Ystr = r.AffineYCoord.ToBigInteger().ToString(),
                 };
             }
         }
@@ -76,8 +92,8 @@ namespace VotingApp.DesktopClient.Crypto
         {
             return new Point()
             {
-                X = System.Numerics.BigInteger.Parse(_curveOperations.PublicKey.Q.AffineXCoord.ToBigInteger().ToString()),
-                Y = System.Numerics.BigInteger.Parse(_curveOperations.PublicKey.Q.AffineYCoord.ToBigInteger().ToString())
+                Xstr = _curveOperations.PublicKey.Q.AffineXCoord.ToBigInteger().ToString(),
+                Ystr = _curveOperations.PublicKey.Q.AffineYCoord.ToBigInteger().ToString()
             };
         }
 
@@ -97,12 +113,55 @@ namespace VotingApp.DesktopClient.Crypto
 
         public void CalculatesForRound1()
         {
-            _s = HashFunction.PBKDF2_SHA512_ComputeHash(_parameters, GetPublicKey(), R);
+            BigInteger c = HashFunction.PBKDF2_SHA512_ComputeHash(_parameters, GetPublicKey(), R).Mod(_ecParameters.Curve.Order);
+            // s = r + ac
+            _s = _r.Add(GetPrivateKey().Multiply(c).Mod(_ecParameters.Curve.Order)).Mod(_ecParameters.Curve.Order);
+        }
+
+        public void CalculateRound1Payload(string clientId)
+        {
+            _round1Payload = new RoundPayload()
+            {
+                VoterId = clientId,
+                Round = 1,
+                Payload = JsonConvert.SerializeObject(new Round1Payload()
+                {
+                    VotingKey = new Point()
+                    {
+                        Xstr = GetPublicKey().Xstr,
+                        Ystr = GetPublicKey().Ystr,
+                    },
+                    ZKP = new Round1ZKP()
+                    {
+                        R = R,
+                        s = s.ToString()
+                    }
+                })
+            };
         }
 
         public void SavePayloads(Dictionary<string, Round1Payload?>? voterPayloads)
         {
             _payloads = voterPayloads;
+        }
+
+        public bool CheckZeroKnowledgeProof(Round1Payload payload)
+        {
+            // first, calculate c = H(A, g, X)
+            BigInteger c = HashFunction.PBKDF2_SHA512_ComputeHash(_parameters, payload.VotingKey, payload.ZKP.R).Mod(_ecParameters.Curve.Order);
+            // check if g^s = R * A^c
+            BigInteger s = new BigInteger(payload.ZKP.s);
+            ECPoint gs = _ecParameters.G.Multiply(s).Normalize();
+            BigInteger Rx = new BigInteger(payload.ZKP.R.Xstr);
+            BigInteger Ry = new BigInteger(payload.ZKP.R.Ystr);
+            ECPoint R = _ecParameters.Curve.CreatePoint(Rx, Ry);
+
+            BigInteger Ax = new BigInteger(payload.VotingKey.Xstr);
+            BigInteger Ay = new BigInteger(payload.VotingKey.Ystr);
+            ECPoint A = _ecParameters.Curve.CreatePoint(Ax, Ay);
+            ECPoint RAc = R.Add(A.Multiply(c)).Normalize();
+
+            return gs.Equals(RAc);
         }
     }
 }

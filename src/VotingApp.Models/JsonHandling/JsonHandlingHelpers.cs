@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.SignalR;
+using Newtonsoft.Json;
 
 namespace VotingApp.Models.JsonHandling
 {
@@ -8,9 +9,9 @@ namespace VotingApp.Models.JsonHandling
         {
             return options =>
             {
-                options.PayloadSerializerSettings.ReferenceLoopHandling = Newtonsoft.Json.ReferenceLoopHandling.Serialize;
+                options.PayloadSerializerSettings.ReferenceLoopHandling = ReferenceLoopHandling.Serialize;
                 options.PayloadSerializerSettings.MaxDepth = 3;
-                options.PayloadSerializerSettings.Converters = new List<Newtonsoft.Json.JsonConverter>()
+                options.PayloadSerializerSettings.Converters = new List<JsonConverter>()
                 {
                     new BouncyCastleBigIntegerConverter()
                 };

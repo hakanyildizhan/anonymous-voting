@@ -4,8 +4,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using VotingApp.DesktopClient.Crypto;
@@ -20,7 +20,6 @@ namespace VotingApp.DesktopClient
         private string _question;
         private string _status;
         private string _ticker;
-        private HubConnection connection;
         private int _voterCount;
         private double _yesPercentage;
         private double _noPercentage;
@@ -122,20 +121,26 @@ namespace VotingApp.DesktopClient
             await _connection.SendAsync("NotifyConnected", _clientId);
             _connection.On<State>("BroadcastStateToVoters", HandleStatusChange);
             _connection.On<DomainParameters>("BroadcastDomainParameters", HandleBroadcastDomainParameters);
-            _connection.On<IList<RoundPayload>>("GetRoundPayloads", HandleGetRoundPayloads);
+            _connection.On<string>("GetRoundPayloads", HandleGetRoundPayloads);
         }
 
-        private async Task HandleGetRoundPayloads(IList<RoundPayload> payloads)
+        private async Task HandleGetRoundPayloads(string payloads)
         {
+            IList<RoundPayload> payloadList = JsonConvert.DeserializeObject<IList<RoundPayload>>(payloads);
             switch(_currentState)
             {
-                case State.Round1:
-                    var voterPayloads = payloads.Where(p => !p.VoterId.Equals(_clientId))
-                        .Select(p => new { p.VoterId, p.Payload })
+                case State.Round1PayloadBroadcast:
+                    var voterPayloads = payloadList.Where(p => !p.VoterId.Equals(_clientId))
+                        .Select(p => new { p.VoterId, p.Payload });
+                    var payloadDict = voterPayloads
                         .ToDictionary(p => p.VoterId, p => JsonConvert.DeserializeObject<Round1Payload>(p.Payload));
-                    _paramHandler.SavePayloads(voterPayloads);
+                    _paramHandler.SavePayloads(payloadDict);
+                    Status = "Got all payloads.";
                     break;
             }
+
+            Ticker = $"Got payloads from other {payloadList.Count-1} voters.";
+            await _connection.SendAsync("VoterIsReady", _clientId);
         }
 
         private async Task HandleBroadcastDomainParameters(DomainParameters parameters)
@@ -152,6 +157,8 @@ namespace VotingApp.DesktopClient
 
         private async Task HandleStatusChange(State state)
         {
+            Trace.WriteLine($"Current state was {_currentState.ToString()}");
+            Trace.WriteLine($"New state is {state.ToString()}");
             if (_currentState == state)
             {
                 return;
@@ -175,32 +182,45 @@ namespace VotingApp.DesktopClient
                     await Task.Delay(TimeSpan.FromSeconds(1));
                     _paramHandler.PickRandomr();
                     _paramHandler.CalculatesForRound1();
-
-                    var payload = new RoundPayload()
-                    {
-                        VoterId = _clientId,
-                        Round = 1,
-                        Payload = JsonConvert.SerializeObject(new Round1Payload()
-                        {
-                            VotingKey = new Point()
-                            {
-                                X = _paramHandler.GetPublicKey().X,
-                                Y = _paramHandler.GetPublicKey().Y,
-                            },
-                            ZKP = new Round1ZKP()
-                            {
-                                R = _paramHandler.R,
-                                s = _paramHandler.s
-                            }
-                        })
-                    };
-
-                    await _connection.SendAsync("BroadcastRoundPayload", payload);
+                    _paramHandler.CalculateRound1Payload(_clientId);
+                    Status = "Calculated Round 1 payload & zero-knowledge proof.";
+                    await _connection.SendAsync("VoterIsReady", _clientId);
+                    break;
+                case State.Round1PayloadBroadcast:
+                    await _connection.SendAsync("BroadcastRoundPayload", _paramHandler.Round1Payload);
                     Status = "Sent Round 1 payload & zero-knowledge proof.";
+                    await Task.Delay(TimeSpan.FromSeconds(4));
+                    await _connection.SendAsync("VoterIsReady", _clientId);
                     break;
                 case State.Round1ZKPCheck:
                     Status = "All voter payloads are now available. Checking proofs of zero knowledge..";
-                    // TODO: check ZKPs
+
+                    foreach (var voterPayload in _paramHandler.Payloads)
+                    {
+                        if (voterPayload.Key.Equals(_clientId))
+                        {
+                            continue;
+                        }
+
+                        await Task.Delay(TimeSpan.FromSeconds(3));
+                        Ticker = $"Checking zero knowledge proof for voter {voterPayload.Key}:";
+                        Ticker += $"\r\nVoter public key: {voterPayload.Value.VotingKey.ToPublicKeyFormat()}";
+                        Ticker += $"\r\nVoter g^r (R): {voterPayload.Value.ZKP.R}";
+                        Ticker += $"\r\nVoter s: {voterPayload.Value.ZKP.s}";
+
+                        bool checkResult = _paramHandler.CheckZeroKnowledgeProof(voterPayload.Value);
+
+                        if (checkResult)
+                        {
+                            Ticker += "\r\n\r\nZero knowledge proof HOLDS.";
+                        }
+                        else
+                        {
+                            Ticker += "\r\n\r\nZero knowledge proof DOES NOT HOLD.";
+                            throw new Exception();
+                        }
+                    }
+                    Status = "Finished checking proofs of zero knowledge.";
                     break;
             }
         }

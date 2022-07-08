@@ -1,20 +1,18 @@
 ﻿using Microsoft.AspNetCore.SignalR;
+using Newtonsoft.Json;
 using Org.BouncyCastle.Asn1;
 using Org.BouncyCastle.Asn1.X9;
 using Org.BouncyCastle.Crypto.Generators;
 using Org.BouncyCastle.Crypto.Parameters;
 using Org.BouncyCastle.Security;
-using System.Collections.Concurrent;
+using VotingApp.Data;
 using VotingApp.Models;
 
 namespace VotingApp.ConsoleHub
 {
     public class VotingHub : Hub<IVotingClient>
     {
-        private static ConcurrentDictionary<string, ClientState> _voters = new ConcurrentDictionary<string, ClientState>();
-        private ConcurrentBag<RoundPayload> _roundPayloads = new ConcurrentBag<RoundPayload>();
-        private bool _started;
-        private static State _currentState = State.WaitingToCommence;
+        private static bool _started;
 
         public override async Task OnConnectedAsync()
         {
@@ -22,11 +20,11 @@ namespace VotingApp.ConsoleHub
             await base.OnConnectedAsync();
         }
 
-        public async Task BroadcastRoundPayload(RoundPayload payload)
+        public Task BroadcastRoundPayload(RoundPayload payload)
         {
-            _voters[payload.VoterId] = ClientState.Ready;
-            _roundPayloads.Add(payload);
-            await VoterIsReady(payload.VoterId);
+            DataStore.AddVoterPayload(payload);
+            Console.WriteLine($"Got the payload from voter {payload.VoterId}");
+            return Task.CompletedTask;
         }
 
         public async Task BroadcastQuestion(string question)
@@ -43,12 +41,11 @@ namespace VotingApp.ConsoleHub
             }
 
             Console.WriteLine($"Voter with ID {voterId} is registered.");
-            _voters.TryAdd(voterId, ClientState.Ready);
+            DataStore.AddVoter(voterId, ClientState.Busy);
             await Clients.Caller.BroadcastStateToVoters(State.WaitingToCommence);
 
             if (SessionIsStarted())
             {
-                await Task.Delay(TimeSpan.FromSeconds(2));
                 _started = true;
                 await AdvanceToNextStage();
             }
@@ -56,57 +53,71 @@ namespace VotingApp.ConsoleHub
 
         private async Task AdvanceToNextStage()
         {
-            await Clients.All.BroadcastStateToVoters(++_currentState);
-
-            switch (_currentState)
+            State currentState = DataStore.GetCurrentState();
+            Console.WriteLine($"State change: {currentState} > {++currentState}");
+            DataStore.SaveCurrentState(currentState);
+            switch (currentState)
             {
+                case State.WaitingToCommence:
+                    await Clients.All.BroadcastStateToVoters(currentState);
+                    break;
                 case State.DistributingDomainParameters:
+                    await Clients.All.BroadcastStateToVoters(currentState);
                     await DistributeDomainParameters();
                     SetAllVoterStates(ClientState.Busy);
                     break;
                 case State.Round1:
-                    await Clients.All.BroadcastStateToVoters(_currentState);
+                    await Clients.All.BroadcastStateToVoters(currentState);
                     SetAllVoterStates(ClientState.Busy);
                     break;
-                case State.Round1ZKPCheck:
-                    await Clients.All.BroadcastStateToVoters(_currentState);
+                case State.Round1PayloadBroadcast:
                     SetAllVoterStates(ClientState.Busy);
+                    await Clients.All.BroadcastStateToVoters(currentState);
+                    break;
+                case State.Round1GetPayloads:
+                    var payloads = DataStore.GetVoterPayloads();
+                    if (payloads != null && payloads.Any())
+                    {
+                        Console.WriteLine($"{payloads.Count} payloads are being sent to voters");
+                        SetAllVoterStates(ClientState.Busy);
+                        await Clients.All.GetRoundPayloads(JsonConvert.SerializeObject(payloads));
+                    }
+
+                    break;
+                case State.Round1ZKPCheck:
+                    SetAllVoterStates(ClientState.Busy);
+                    await Clients.All.BroadcastStateToVoters(currentState);
                     break;
             }
         }
 
         private void SetAllVoterStates(ClientState state)
         {
-            foreach (var keyValuePair in _voters)
-            {
-                _voters[keyValuePair.Key] = state;
-            }
+            DataStore.SetAllVoterStates(state);
         }
 
         public async Task VoterIsReady(string voterId)
         {
-            if (!_voters.ContainsKey(voterId))
-            {
-                // TODO: handle
-                return;
-            }
-
-            _voters[voterId] = ClientState.Ready;
+            DataStore.SetVoterState(voterId, ClientState.Ready);
 
             if (AreAllVotersReady())
             {
+                Console.WriteLine("Advancing to next stage");
+                DataStore.SetVoterState(voterId, ClientState.Busy);
                 await AdvanceToNextStage();
             }
         }
 
         private bool AreAllVotersReady()
         {
-            return !_voters.Any(v => v.Value != ClientState.Ready);
+            return DataStore.AreAllVotersReady();
         }
 
         private bool SessionIsStarted()
         {
-            return _voters.Count == 1;
+            var voterCount = DataStore.GetVoterCount();
+            Console.WriteLine($"There are currently {voterCount} voters");
+            return voterCount == 3;
         }
 
         private async Task DistributeDomainParameters()

@@ -5,7 +5,7 @@ namespace VotingApp.ConsoleHub
     public interface IVotingClient
     {
         Task BroadcastRoundPayload(RoundPayload payload);
-        Task GetRoundPayloads(IList<RoundPayload> payloads);
+        Task GetRoundPayloads(string payloads);
         Task BroadcastStateToVoters(State state);
         Task VoterIsReady(string voterId);
         Task BroadcastDomainParameters(DomainParameters parameters);
