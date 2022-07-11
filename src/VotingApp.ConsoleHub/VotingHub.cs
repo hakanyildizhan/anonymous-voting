@@ -22,8 +22,8 @@ namespace VotingApp.ConsoleHub
 
         public Task BroadcastRoundPayload(RoundPayload payload)
         {
+            Console.WriteLine($"Got the payload from voter {payload.VoterId} for round {payload.Round}");
             DataStore.AddVoterPayload(payload);
-            Console.WriteLine($"Got the payload from voter {payload.VoterId}");
             return Task.CompletedTask;
         }
 
@@ -75,17 +75,40 @@ namespace VotingApp.ConsoleHub
                     await Clients.All.BroadcastStateToVoters(currentState);
                     break;
                 case State.Round1GetPayloads:
-                    var payloads = DataStore.GetVoterPayloads();
-                    if (payloads != null && payloads.Any())
+                    var round1Payloads = DataStore.GetVoterPayloads(1);
+                    if (round1Payloads != null && round1Payloads.Any())
                     {
-                        Console.WriteLine($"{payloads.Count} payloads are being sent to voters");
+                        Console.WriteLine($"{round1Payloads.Count} payloads are being sent to voters");
                         SetAllVoterStates(ClientState.Busy);
-                        await Clients.All.GetRoundPayloads(JsonConvert.SerializeObject(payloads));
+                        await Clients.All.GetRoundPayloads(JsonConvert.SerializeObject(round1Payloads));
                     }
-
                     break;
                 case State.Round1ZKPCheck:
                     SetAllVoterStates(ClientState.Busy);
+                    await Clients.All.BroadcastStateToVoters(currentState);
+                    break;
+                case State.Round2:
+                    SetAllVoterStates(ClientState.Busy);
+                    await Clients.All.BroadcastStateToVoters(currentState);
+                    break;
+                case State.Round2PayloadBroadcast:
+                    SetAllVoterStates(ClientState.Busy);
+                    await Clients.All.BroadcastStateToVoters(currentState);
+                    break;
+                case State.Round2GetPayloads:
+                    var round2Payloads = DataStore.GetVoterPayloads(2);
+                    if (round2Payloads != null && round2Payloads.Any())
+                    {
+                        Console.WriteLine($"{round2Payloads.Count} payloads are being sent to voters");
+                        SetAllVoterStates(ClientState.Busy);
+                        await Clients.All.GetRoundPayloads(JsonConvert.SerializeObject(round2Payloads));
+                    }
+                    break;
+                case State.Round2ZKPCheck:
+                    SetAllVoterStates(ClientState.Busy);
+                    await Clients.All.BroadcastStateToVoters(currentState);
+                    break;
+                case State.VotingResultCalculation:
                     await Clients.All.BroadcastStateToVoters(currentState);
                     break;
             }

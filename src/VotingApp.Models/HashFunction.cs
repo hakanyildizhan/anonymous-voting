@@ -50,6 +50,29 @@ namespace VotingApp.Models
             return ToBigInt(hash);
         }
 
+        public static BigInteger PBKDF2_SHA512_ComputeHash(DomainParameters parameters, Point A, Point B, Point C)
+        {
+            var curve = new FpCurve(parameters.Q, parameters.A, parameters.B, parameters.P, parameters.Cofactor);
+            ECPoint G = curve.CreatePoint(parameters.Gx, parameters.Gy);
+            BigInteger Ax = new BigInteger(A.Xstr);
+            BigInteger Ay = new BigInteger(A.Ystr);
+            ECPoint APoint = curve.CreatePoint(Ax, Ay);
+            BigInteger Bx = new BigInteger(B.Xstr);
+            BigInteger By = new BigInteger(B.Ystr);
+            ECPoint BPoint = curve.CreatePoint(Bx, By);
+            BigInteger Cx = new BigInteger(C.Xstr);
+            BigInteger Cy = new BigInteger(C.Ystr);
+            ECPoint CPoint = curve.CreatePoint(Cx, Cy);
+            // H = g + 2*A - 3*B + C
+            ECPoint s = G.Add(APoint.Multiply(BigInteger.Two).Normalize()).Normalize().Subtract(BPoint.Multiply(BigInteger.Three).Normalize()).Add(CPoint).Normalize();
+
+            var pdb = new Pkcs5S2ParametersGenerator(new Org.BouncyCastle.Crypto.Digests.Sha512Digest());
+            pdb.Init(PbeParametersGenerator.Pkcs5PasswordToBytes(s.ToString().ToCharArray()), CreateSalt(APoint, BPoint), ITERATIONS);
+            var key = (KeyParameter)pdb.GenerateDerivedMacParameters(HASH_BYTE_SIZE * 8);
+            var hash = key.GetKey();
+            return ToBigInt(hash);
+        }
+
         private static byte[] CreateSalt(ECPoint A, ECPoint R)
         {
             byte[] salt = new byte[SALT_BYTE_SIZE];

@@ -8,7 +8,6 @@
         Round1PayloadBroadcast,
         Round1GetPayloads,
         Round1ZKPCheck,
-        YiCalculation,
         Round2,
         Round2PayloadBroadcast,
         Round2GetPayloads,

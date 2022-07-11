@@ -63,13 +63,15 @@
                         Content="Yes"
                         Margin="0 0 60 0"
                         FontSize="20"
-                        Command="{Binding VoteYesCommand}"/>
+                        Command="{Binding VoteYesCommand}"
+                        IsEnabled="{Binding YesButtonIsEnabled}"/>
                 <Button Width="100" 
                         Height="30"
                         Content="No"
                         Margin="60 0 0 0"
                         FontSize="20"
-                        Command="{Binding VoteNoCommand}"/>
+                        Command="{Binding VoteNoCommand}"
+                        IsEnabled="{Binding NoButtonIsEnabled}"/>
                 
             </StackPanel>
             

@@ -91,10 +91,12 @@ namespace VotingApp.Data
             col.EnsureIndex(x => x.VoterId);
         }
 
-        public static List<RoundPayload> GetVoterPayloads()
+        public static List<RoundPayload> GetVoterPayloads(int round)
         {
             var col = db.GetCollection<VoterPayload>();
-            return col.FindAll().Select(p => new RoundPayload()
+            return col.FindAll()
+                .Where(p => p.Round == round)
+                .Select(p => new RoundPayload()
             {
                 VoterId = p.VoterId,
                 Payload = p.Payload,

@@ -20,15 +20,58 @@ namespace VotingApp.DesktopClient
         private string _question;
         private string _status;
         private string _ticker;
-        private int _voterCount;
         private double _yesPercentage;
         private double _noPercentage;
         private readonly string _clientId;
         private HubConnection _connection;
         private DParamHandler _paramHandler;
         private State _currentState;
-        
+        private bool? _vote;
+        private bool _yesButtonIsEnabled = true;
+        private bool _noButtonIsEnabled = true;
+        private bool _awaitingVote = true;
+
         public IConfiguration Configuration { get; set; }
+        public bool? Vote
+        {
+            get => _vote;
+            set
+            {
+                if (_vote != value)
+                {
+                    _vote = value;
+                    OnPropertyChanged(nameof(Vote));
+                    YesButtonIsEnabled = !_vote.Value;
+                    NoButtonIsEnabled = _vote.Value;
+                    //OnPropertyChanged(nameof(YesButtonIsEnabled));
+                    //OnPropertyChanged(nameof(NoButtonIsEnabled));
+                }
+            }
+        }
+        public bool YesButtonIsEnabled 
+        {
+            get => _yesButtonIsEnabled;
+            set
+            {
+                if (_yesButtonIsEnabled != value)
+                {
+                    _yesButtonIsEnabled = value;
+                    OnPropertyChanged(nameof(YesButtonIsEnabled));
+                }
+            }
+        }
+        public bool NoButtonIsEnabled 
+        {
+            get => _noButtonIsEnabled;
+            set
+            {
+                if (_noButtonIsEnabled != value)
+                {
+                    _noButtonIsEnabled = value;
+                    OnPropertyChanged(nameof(NoButtonIsEnabled));
+                }
+            }
+        }
         public string Status 
         {
             get => _status;
@@ -130,15 +173,20 @@ namespace VotingApp.DesktopClient
             switch(_currentState)
             {
                 case State.Round1PayloadBroadcast:
-                    var voterPayloads = payloadList.Where(p => !p.VoterId.Equals(_clientId))
-                        .Select(p => new { p.VoterId, p.Payload });
+                    var voterPayloads = payloadList.Select(p => new { p.VoterId, p.Payload });
                     var payloadDict = voterPayloads
                         .ToDictionary(p => p.VoterId, p => JsonConvert.DeserializeObject<Round1Payload>(p.Payload));
                     _paramHandler.SavePayloads(payloadDict);
-                    Status = "Got all payloads.";
+                    break;
+                case State.Round2PayloadBroadcast:
+                    var round2Payloads = payloadList.Select(p => new { p.VoterId, p.Payload })
+                        .ToDictionary(p => p.VoterId, p => JsonConvert.DeserializeObject<Round2Payload>(p.Payload));
+                    _paramHandler.SavePayloads(round2Payloads);
                     break;
             }
 
+            await Task.Delay(TimeSpan.FromSeconds(1));
+            Status = "Got all payloads.";
             Ticker = $"Got payloads from other {payloadList.Count-1} voters.";
             await _connection.SendAsync("VoterIsReady", _clientId);
         }
@@ -195,7 +243,7 @@ namespace VotingApp.DesktopClient
                 case State.Round1ZKPCheck:
                     Status = "All voter payloads are now available. Checking proofs of zero knowledge..";
 
-                    foreach (var voterPayload in _paramHandler.Payloads)
+                    foreach (var voterPayload in _paramHandler.Round1Payloads)
                     {
                         if (voterPayload.Key.Equals(_clientId))
                         {
@@ -204,10 +252,13 @@ namespace VotingApp.DesktopClient
 
                         await Task.Delay(TimeSpan.FromSeconds(3));
                         Ticker = $"Checking zero knowledge proof for voter {voterPayload.Key}:";
+                        await Task.Delay(TimeSpan.FromSeconds(1));
                         Ticker += $"\r\nVoter public key: {voterPayload.Value.VotingKey.ToPublicKeyFormat()}";
+                        await Task.Delay(TimeSpan.FromSeconds(1));
                         Ticker += $"\r\nVoter g^r (R): {voterPayload.Value.ZKP.R}";
+                        await Task.Delay(TimeSpan.FromSeconds(1));
                         Ticker += $"\r\nVoter s: {voterPayload.Value.ZKP.s}";
-
+                        await Task.Delay(TimeSpan.FromSeconds(1));
                         bool checkResult = _paramHandler.CheckZeroKnowledgeProof(voterPayload.Value);
 
                         if (checkResult)
@@ -221,18 +272,97 @@ namespace VotingApp.DesktopClient
                         }
                     }
                     Status = "Finished checking proofs of zero knowledge.";
+                    await _connection.SendAsync("VoterIsReady", _clientId);
+                    break;
+                case State.Round2:
+                    Status = "Round 2 in progress.";
+                    await Task.Delay(TimeSpan.FromSeconds(1));
+                    await _paramHandler.CalculateY();
+                    Ticker = "Yi calculation complete.";
+                    
+                    if (!Vote.HasValue)
+                    {
+                        Status = "You have not voted yet. Please vote.";
+                        Ticker += "\r\nAwaiting your vote..";
+                    }
+                    else
+                    {
+                        await CalculateRound2Payload();
+                    }
+                    break;
+                case State.Round2PayloadBroadcast:
+                    await _connection.SendAsync("BroadcastRoundPayload", _paramHandler.Round2Payload);
+                    Status = "Sent Round 2 payload & zero-knowledge proof.";
+                    await Task.Delay(TimeSpan.FromSeconds(4));
+                    await _connection.SendAsync("VoterIsReady", _clientId);
+                    break;
+                case State.Round2ZKPCheck:
+                    Status = "All voter payloads are now available. Checking proofs of zero knowledge..";
+
+                    foreach (var voterPayload in _paramHandler.Round2Payloads)
+                    {
+                        if (voterPayload.Key.Equals(_clientId))
+                        {
+                            continue;
+                        }
+
+                        await Task.Delay(TimeSpan.FromSeconds(3));
+                        Ticker = $"Checking zero knowledge proof for voter {voterPayload.Key}:";
+                        await Task.Delay(TimeSpan.FromSeconds(1));
+                        var votingKey = _paramHandler.Round1Payloads[voterPayload.Key].VotingKey;
+                        Ticker += $"\r\nVoter public key (X): {votingKey.ToPublicKeyFormat()}";
+                        await Task.Delay(TimeSpan.FromSeconds(1));
+                        bool checkResult = _paramHandler.CheckZeroKnowledgeProof(votingKey, voterPayload.Value);
+
+                        if (checkResult)
+                        {
+                            Ticker += "\r\n\r\nZero knowledge proof HOLDS.";
+                        }
+                        else
+                        {
+                            Ticker += "\r\n\r\nZero knowledge proof DOES NOT HOLD.";
+                            throw new Exception();
+                        }
+                    }
+                    Status = "Finished checking proofs of zero knowledge.";
+                    await _connection.SendAsync("VoterIsReady", _clientId);
+                    break;
+                case State.VotingResultCalculation:
+                    var numberOfYesVotes = _paramHandler.CalculateYesVotes();
+                    YesPercentage = ((numberOfYesVotes * 1.0d) / _paramHandler.Round2Payloads.Count) * 100;
+                    NoPercentage = 100.0 - YesPercentage;
+                    Status = "Voting complete, results are available.";
                     break;
             }
         }
 
-        private void VoteYes()
+        private async Task VoteYes()
         {
-
+            Vote = true;
+            if (_awaitingVote && _currentState == State.Round2)
+            {
+                await CalculateRound2Payload();
+            }
         }
 
-        private void VoteNo()
+        private async Task VoteNo()
         {
+            Vote = false;
+            if (_awaitingVote && _currentState == State.Round2)
+            {
+                await CalculateRound2Payload();
+            }
+        }
 
+        private async Task CalculateRound2Payload()
+        {
+            _awaitingVote = false;
+            YesButtonIsEnabled = false;
+            NoButtonIsEnabled = false;
+            await _paramHandler.CalculateRound2Payload(Vote.Value);
+            Ticker = "Gxyv and CDS ZKP is calculated.";
+            Status = "Calculated Round 2 payload & zero-knowledge proof (CDS).";
+            await _connection.SendAsync("VoterIsReady", _clientId);
         }
 
         private void RetryLimitExceeded(object? sender, EventArgs e)
